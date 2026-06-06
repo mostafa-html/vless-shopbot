@@ -19,7 +19,7 @@ read_input_yn() {
     echo
 }
 
-REPO_URL="https://github.com/evansvl/vless-shopbot.git"
+REPO_URL="https://github.com/mostafa-html/vless-shopbot.git"
 PROJECT_DIR="vless-shopbot"
 NGINX_CONF_FILE="/etc/nginx/sites-available/${PROJECT_DIR}.conf"
 

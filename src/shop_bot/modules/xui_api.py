@@ -29,18 +29,32 @@ def login_to_host(host_url: str, username: str, password: str, inbound_id: int) 
 def get_connection_string(inbound: Inbound, user_uuid: str, host_url: str, remark: str) -> str | None:
     if not inbound:
         return None
-    settings = inbound.stream_settings.reality_settings.get('settings')
+
+    # Guard against missing stream_settings — 3x-ui v3.x may return None
+    if not inbound.stream_settings:
+        logger.error("stream_settings is None on inbound — check 3x-ui panel config")
+        return None
+
+    reality = getattr(inbound.stream_settings, 'reality_settings', None)
+    if not reality:
+        logger.error("reality_settings missing — ensure inbound uses REALITY security")
+        return None
+
+    settings = reality.get('settings')
     if not settings:
         return None
+
     public_key = settings.get('publicKey')
-    fp = settings.get('fingerprint')
-    server_names = inbound.stream_settings.reality_settings.get('serverNames')
-    short_ids = inbound.stream_settings.reality_settings.get('shortIds')
+    fp = settings.get('fingerprint', 'chrome')  # fallback fingerprint for v3.x
+    server_names = reality.get('serverNames')
+    short_ids = reality.get('shortIds')
     port = inbound.port
+
     if not all([public_key, server_names, short_ids]):
         return None
+
     parsed_url = urlparse(host_url)
-    short_id = short_ids[0]
+    short_id = short_ids[0] if short_ids else ''
     return (
         f'vless://{user_uuid}@{parsed_url.hostname}:{port}'
         f'?type=tcp&security=reality&pbk={public_key}&fp={fp}&sni={server_names[0]}'
@@ -52,13 +66,14 @@ def _bytes_from_gb(traffic_gb: int) -> int:
     return max(0, int(traffic_gb)) * 1024 * 1024 * 1024
 
 
-def _set_client_traffic_limit(client_obj, traffic_gb: int):
+def _set_client_traffic_limit(client_obj, traffic_gb: int) -> int:
     traffic_bytes = _bytes_from_gb(traffic_gb)
-    for attr in ('total_gb', 'totalGB', 'total', 'total_bytes'):
-        if hasattr(client_obj, attr):
-            setattr(client_obj, attr, traffic_bytes)
-            return traffic_bytes
-    if hasattr(client_obj, '__dict__'):
+    # py3xui 0.5.x canonical attribute is total_gb (stores bytes despite the name)
+    if hasattr(client_obj, 'total_gb'):
+        client_obj.total_gb = traffic_bytes
+    elif hasattr(client_obj, 'totalGB'):
+        client_obj.totalGB = traffic_bytes
+    else:
         client_obj.__dict__['total'] = traffic_bytes
     return traffic_bytes
 
